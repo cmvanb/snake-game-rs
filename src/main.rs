@@ -1,80 +1,174 @@
+//------------------------------------------------------------------------------
+// Snek
+//------------------------------------------------------------------------------
+
 use bevy::prelude::*;
 
-// Constants
-const LEFT: Vec2 = Vec2::new(-1.0, 0.0);
-const RIGHT: Vec2 = Vec2::new(1.0, 0.0);
-const UP: Vec2 = Vec2::new(0.0, 1.0);
-const DOWN: Vec2 = Vec2::new(0.0, -1.0);
+mod direction;
+use direction::Direction;
 
-const SNAKE_SPEED: f32 = 200.0;
+mod constants;
+use constants::*;
+
+// Entry point
+//------------------------------------------------------------------------------
+fn main() {
+    App::new()
+        .add_plugins(
+            DefaultPlugins.set(
+                WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Snek".into(),
+                        resolution: (800., 600.).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+        )
+        .add_systems(
+            Startup, (
+                init_game,
+            ).chain(),
+        )
+        .add_systems(
+            FixedUpdate, (
+                handle_input,
+                move_snake,
+            ).chain(),
+        )
+        .add_systems(Update,
+            bevy::window::close_on_esc,
+        )
+        .add_systems(
+            PostUpdate, (
+                apply_size,
+            ).chain(),
+        )
+        .run();
+}
 
 // Components
-#[derive(Component, Deref, DerefMut)]
-struct Velocity(Vec2);
+//------------------------------------------------------------------------------
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+struct Position {
+    x: i32,
+    y: i32,
+}
 
 #[derive(Component)]
-struct SnakeHead;
+struct Size {
+    width: f32,
+    height: f32,
+}
 
-// Setup system
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+impl Size {
+    pub fn square(x: f32) -> Self {
+        Self {
+            width: x,
+            height: x,
+        }
+    }
+}
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+struct SpriteSize {
+    width: i32,
+    height: i32,
+}
+
+#[derive(Component)]
+struct SnakeHead {
+    direction: Direction,
+    next_direction: Direction,
+}
+
+// Setup systems
+//------------------------------------------------------------------------------
+fn init_game(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
     commands.spawn(Camera2dBundle::default());
 
     commands.spawn((
-        SnakeHead,
+        SnakeHead {
+            direction: SNAKE_INITIAL_DIRECTION,
+            next_direction: SNAKE_INITIAL_DIRECTION,
+        },
+        Position {
+            x: 0, y: 0,
+        },
+        Size::square(1.),
+        SpriteSize {
+            width: 128, height: 128,
+        },
         SpriteBundle {
             texture: asset_server.load("snake_head.png"),
-            transform: Transform {
-                translation: Vec3::new(0.0,  0.0,  0.0),
-                scale: Vec3::new(0.5, 0.5, 1.0),
-                ..default()
-            },
             ..Default::default()
         },
-        Velocity(RIGHT.normalize() * SNAKE_SPEED),
     ));
 }
 
 // Gameplay systems
-fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time: Res<Time>) {
-    for (mut transform, velocity) in &mut query {
-        transform.translation.x += velocity.x * time.delta_seconds();
-        transform.translation.y += velocity.y * time.delta_seconds();
-    }
-}
-
-fn control_snake(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<&mut Velocity, With<SnakeHead>>,
+//------------------------------------------------------------------------------
+fn handle_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut q: Query<&mut SnakeHead>,
 ) {
-    let mut velocity = query.single_mut();
-    let mut direction: Vec2 = Vec2::new(velocity.x, velocity.y).normalize();
+    let mut head = q.single_mut();
 
-    if keyboard_input.pressed(KeyCode::W) {
-        direction = UP;
-    }
-    if keyboard_input.pressed(KeyCode::S) {
-        direction = DOWN;
-    }
-    if keyboard_input.pressed(KeyCode::A) {
-        direction = LEFT;
-    }
-    if keyboard_input.pressed(KeyCode::D) {
-        direction = RIGHT;
-    }
+    let direction: Direction =
+        if keyboard_input.pressed(KeyCode::KeyW) {
+            Direction::Up
+        } else if keyboard_input.pressed(KeyCode::KeyS) {
+            Direction::Down
+        } else if keyboard_input.pressed(KeyCode::KeyA) {
+            Direction::Left
+        } else if keyboard_input.pressed(KeyCode::KeyD) {
+            Direction::Right
+        } else {
+            head.next_direction
+        };
 
-    velocity.x = direction.x * SNAKE_SPEED;
-    velocity.y = direction.y * SNAKE_SPEED;
+    if direction != head.direction.opposite() {
+        head.next_direction = direction;
+    }
 }
 
-// Application
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, (
-            control_snake,
-            apply_velocity,
-        ))
-        .add_systems(Update, bevy::window::close_on_esc)
-        .run();
+fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
+    fn pixel_to_tile(
+        translation: f32,
+        boundary_pixels: f32,
+        boundary_tiles: f32
+    ) -> i32 {
+        (translation / boundary_pixels * boundary_tiles) as i32
+    }
+
+    let (mut head, mut position, mut transform) = q.single_mut();
+
+    transform.translation.x += head.direction.vector().x * SNAKE_SPEED;
+    transform.translation.y += head.direction.vector().y * SNAKE_SPEED;
+
+    let actual_position: Position = Position {
+        x: pixel_to_tile(transform.translation.x, LEVEL_WIDTH as f32, LEVEL_TILES_X as f32),
+        y: pixel_to_tile(transform.translation.y, LEVEL_HEIGHT as f32, LEVEL_TILES_Y as f32),
+    };
+
+    if *position != actual_position {
+        *position = actual_position;
+
+        if head.direction != head.next_direction {
+            head.direction = head.next_direction;
+        }
+    }
+}
+
+fn apply_size(mut q: Query<(&Size, &SpriteSize, &mut Transform)>) {
+    for (size, sprite_size, mut transform) in q.iter_mut() {
+        transform.scale = Vec3::new(
+            (LEVEL_WIDTH as f32 / LEVEL_TILES_X as f32) / sprite_size.width as f32 * size.width,
+            (LEVEL_HEIGHT as f32 / LEVEL_TILES_Y as f32) / sprite_size.height as f32 * size.height,
+            1.,
+        );
+    }
 }
