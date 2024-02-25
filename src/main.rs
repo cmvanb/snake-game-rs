@@ -130,11 +130,13 @@ fn handle_input(
             head.next_direction
         };
 
-    if direction != head.direction.opposite() {
+    if direction != head.direction
+    && direction != head.direction.opposite() {
         head.next_direction = direction;
     }
 }
 
+// TODO: Fix 1/2 tile offset.
 fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
     fn pixel_to_tile(
         translation: f32,
