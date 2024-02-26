@@ -127,7 +127,7 @@ fn handle_input(
         } else if keyboard_input.pressed(KeyCode::KeyD) {
             Direction::Right
         } else {
-            head.next_direction
+            head.direction
         };
 
     if direction != head.direction
@@ -143,7 +143,7 @@ fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
         boundary_pixels: f32,
         boundary_tiles: f32
     ) -> i32 {
-        (translation / boundary_pixels * boundary_tiles) as i32
+        ((translation - (boundary_pixels / boundary_tiles * 0.5)) / boundary_pixels * boundary_tiles) as i32
     }
 
     let (mut head, mut position, mut transform) = q.single_mut();
@@ -163,6 +163,8 @@ fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
             head.direction = head.next_direction;
         }
     }
+
+    info!("x {}, y {}", position.x, position.y)
 }
 
 fn apply_size(mut q: Query<(&Size, &SpriteSize, &mut Transform)>) {
