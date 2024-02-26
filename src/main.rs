@@ -10,43 +10,6 @@ use direction::Direction;
 mod constants;
 use constants::*;
 
-// Entry point
-//------------------------------------------------------------------------------
-fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins.set(
-                WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Snek".into(),
-                        resolution: (800., 600.).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-        )
-        .add_systems(
-            Startup, (
-                init_game,
-            ).chain(),
-        )
-        .add_systems(
-            FixedUpdate, (
-                handle_input,
-                move_snake,
-            ).chain(),
-        )
-        .add_systems(Update,
-            bevy::window::close_on_esc,
-        )
-        .add_systems(
-            PostUpdate, (
-                apply_size,
-            ).chain(),
-        )
-        .run();
-}
-
 // Components
 //------------------------------------------------------------------------------
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -77,19 +40,31 @@ struct SpriteSize {
 }
 
 #[derive(Component)]
+struct SnakeSegment;
+
+#[derive(Component)]
 struct SnakeHead {
     direction: Direction,
     next_direction: Direction,
 }
 
-// Setup systems
+// References
 //------------------------------------------------------------------------------
-fn init_game(
+#[derive(Default, Deref, DerefMut)]
+struct SnakeSegments(Vec<Entity>);
+
+// Startup systems
+//------------------------------------------------------------------------------
+fn init_camera(
+    mut commands: Commands,
+) {
+    commands.spawn(Camera2dBundle::default());
+}
+
+fn init_snake(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    commands.spawn(Camera2dBundle::default());
-
     commands.spawn((
         SnakeHead {
             direction: SNAKE_INITIAL_DIRECTION,
@@ -109,7 +84,7 @@ fn init_game(
     ));
 }
 
-// Gameplay systems
+// FixedUpdate systems
 //------------------------------------------------------------------------------
 fn handle_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -127,7 +102,7 @@ fn handle_input(
         } else if keyboard_input.pressed(KeyCode::KeyD) {
             Direction::Right
         } else {
-            head.next_direction
+            head.direction
         };
 
     if direction != head.direction
@@ -143,7 +118,7 @@ fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
         boundary_pixels: f32,
         boundary_tiles: f32
     ) -> i32 {
-        (translation / boundary_pixels * boundary_tiles) as i32
+        ((translation - (boundary_pixels / boundary_tiles * 0.5)) / boundary_pixels * boundary_tiles) as i32
     }
 
     let (mut head, mut position, mut transform) = q.single_mut();
@@ -163,8 +138,12 @@ fn move_snake(mut q: Query<(&mut SnakeHead, &mut Position, &mut Transform)>) {
             head.direction = head.next_direction;
         }
     }
+
+    info!("x {}, y {}", position.x, position.y)
 }
 
+// Update systems
+//------------------------------------------------------------------------------
 fn apply_size(mut q: Query<(&Size, &SpriteSize, &mut Transform)>) {
     for (size, sprite_size, mut transform) in q.iter_mut() {
         transform.scale = Vec3::new(
@@ -173,4 +152,42 @@ fn apply_size(mut q: Query<(&Size, &SpriteSize, &mut Transform)>) {
             1.,
         );
     }
+}
+
+// Entry point
+//------------------------------------------------------------------------------
+fn main() {
+    App::new()
+        .add_plugins(
+            DefaultPlugins.set(
+                WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Snek".into(),
+                        resolution: (800., 600.).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+        )
+        .add_systems(
+            Startup, (
+                init_camera,
+                init_snake,
+            ).chain(),
+        )
+        .add_systems(
+            FixedUpdate, (
+                handle_input,
+                move_snake,
+            ).chain(),
+        )
+        .add_systems(Update,
+            bevy::window::close_on_esc,
+        )
+        .add_systems(
+            PostUpdate, (
+                apply_size,
+            ).chain(),
+        )
+        .run();
 }
